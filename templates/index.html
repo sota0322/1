@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>GPSマップ表示</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #map {
+            flex: 1;
+            width: 100%;
+        }
+
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 10px;
+            background: #007BFF;
+            color: white;
+            cursor: pointer;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        button:active {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <!-- 現在地ピンへ移動ボタン -->
+        <button onclick="zoomToCurrentLocation()">現在地ピン</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        let map = L.map('map', {
+            center: [35.1839, 137.1156], // 初期位置（愛工大）
+            zoom: 13,
+        });
+
+        // OpenStreetMapのタイルを設定
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        let currentMarker = null; // 現在地のマーカーを格納
+        let isFirstPosition = true; // 最初の位置取得かどうか
+        let shouldZoomToCurrentLocation = false; // ズームするかどうかのフラグ
+        let spots = []; // スポット情報を格納
+        let stampButton = null; // スタンプボタンの要素
+
+        // スポットの座標を取得してマップ上に表示
+        fetch('/spots')
+            .then(response => response.json())
+            .then(data => {
+                spots = data;
+                data.forEach(spot => {
+                    let circle = L.circle([spot.latitude, spot.longitude], {
+                        color: 'blue',
+                        fillColor: 'blue',
+                        fillOpacity: 0.3,
+                        radius: spot.radius
+                    }).addTo(map);
+
+                    // スポット情報を格納
+                    circle.bindPopup(`${spot.name}`).openOn(map);
+                    //spot.circle = circle;
+                });
+            });
+
+        function getLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(updatePosition, showError, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                });
+            } else {
+                alert("このブラウザはGPSをサポートしていません。");
+            }
+        }
+
+        function updatePosition(position) {
+            let lat = position.coords.latitude;
+            let lng = position.coords.longitude;
+
+            // 初回: 新しいマーカーを作成
+            if (!currentMarker) {
+                currentMarker = L.marker([lat, lng]).addTo(map)
+                    .bindPopup("現在地").openPopup();
+            } else {
+                // 2回目以降: マーカーの位置を更新
+                currentMarker.setLatLng([lat, lng]);
+            }
+
+            // 3秒ごとの位置更新時はズームしない
+            if (shouldZoomToCurrentLocation) {
+                map.setView([lat, lng], 15);
+                shouldZoomToCurrentLocation = false; // ズーム後はフラグをリセット
+            }
+
+            // スポットとの距離を計算してスタンプボタンを表示
+            checkSpotDistance(lat, lng);
+        }
+
+        function checkSpotDistance(lat, lng) {
+            let distanceToSpot = null;
+            let nearestSpot = null;
+
+            // 各スポットとの距離を計算
+            spots.forEach(spot => {
+                let spotLatLng = L.latLng(spot.latitude, spot.longitude);
+                let distance = spotLatLng.distanceTo([lat, lng]);
+
+                if (!distanceToSpot || distance < distanceToSpot) {
+                    distanceToSpot = distance;
+                    nearestSpot = spot;
+                }
+            });
+
+            // 最寄りのスポットとの距離が50m以内になった場合、スタンプボタンを表示
+            if (distanceToSpot <= 20) {
+                if (!stampButton) {
+                    createStampButton();
+                }
+            } else {
+                if (stampButton) {
+                    stampButton.style.display = 'none';
+                }
+            }
+        }
+
+        // スタンプボタンを作成
+        function createStampButton() {
+            stampButton = document.createElement('button');
+            stampButton.innerText = 'スタンプを押す';
+            stampButton.style.position = 'absolute';
+            stampButton.style.bottom = '20px';
+            stampButton.style.left = '50%';
+            stampButton.style.transform = 'translateX(-50%)';
+            stampButton.style.padding = '15px 30px';
+            stampButton.style.fontSize = '18px';
+            stampButton.style.border = 'none';
+            stampButton.style.borderRadius = '10px';
+            stampButton.style.backgroundColor = '#28a745';
+            stampButton.style.color = 'white';
+            stampButton.style.cursor = 'pointer';
+            stampButton.style.zIndex = '1000';
+
+            stampButton.addEventListener('click', function() {
+                alert('スタンプを押しました！');
+                // スタンプ押した後にボタン非表示
+                stampButton.style.display = 'none';
+            });
+
+            document.body.appendChild(stampButton);
+        }
+
+        // 現在地を取得し、ズーム
+        function zoomToCurrentLocation() {
+            shouldZoomToCurrentLocation = true;
+            getLocation(); // 現在地取得を実行
+        }
+
+        function showError(error) {
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    alert("位置情報の取得が拒否されました。");
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    alert("位置情報が利用できません。");
+                    break;
+                case error.TIMEOUT:
+                    alert("タイムアウトしました。");
+                    break;
+                case error.UNKNOWN_ERROR:
+                    alert("不明なエラーが発生しました。");
+                    break;
+            }
+        }
+
+        // 3秒ごとに現在地を取得
+        setInterval(getLocation, 3000);
+
+    </script>
+</body>
+</html>

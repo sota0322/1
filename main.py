@@ -122,6 +122,11 @@ def game():
 def info():
     return render_template('info.html')
 
+
+@app.route('/aaa')
+def index():
+    return render_template('index.html')
+
 @app.route('/spots')
 def get_spots():
     spots = [
